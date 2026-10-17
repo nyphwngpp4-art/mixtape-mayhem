@@ -9,11 +9,12 @@
 <div class="card"><h3>Songs played</h3><ol class="hist" id="h"></ol></div></div>
 <script src="songs.js"></script><script src="config.js"></script><script src="logo.js"></script><script>
 let S=JSON.parse(localStorage.jj_host||'null')||{code:mk(),n:0,round:1};if(!S.round)S.round=1;function mk(set){return (set==='decades'?'D':'')+Array.from({length:4},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.random()*24|0]).join('')}
+localStorage.jj_host=JSON.stringify(S); // keep the code across reloads and the Spotify login round-trip
 let SONGS=songsFor(S.code);const save=()=>{localStorage.jj_host=JSON.stringify(S);render()};
 function render(){SONGS=songsFor(S.code);setn.textContent=SETS[setKey(S.code)].name;const R=ROUNDS[S.round];rnd.textContent=`${R.name}: ${R.rule}`+(S.round===3?' – Play like a champion!':'');code.textContent=S.code;h.innerHTML=SONGS.slice(0,S.n).map(s=>`<li>${s[0]} – <i>${s[1]}</i></li>`).join('');
  if(S.n){const s=SONGS[S.n-1];num.textContent=`Song #${S.n} of ${SONGS.length}`;now.textContent=s[0];art.textContent=s[1];play.textContent=sp.token?'':`Play: ${s[0]} – ${s[1]} (or hum it! 10-second guess bonus)`}else{num.textContent='Song #0';now.textContent='Press Next to start!';art.textContent='';play.textContent=''}}
 function nextRound(){if(S.round<3&&confirm('Advance to '+ROUNDS[S.round+1].name+' ('+ROUNDS[S.round+1].rule+')? Songs keep counting.')){S.round++;save()}}
-function next(){if(S.n<SONGS.length){S.n++;save();spPlay(S.n-1)}}function back(){if(S.n>0){S.n--;save()}}
+function next(){if(S.n<SONGS.length){S.n++;save();spPlay(S.n-1)}}function back(){if(S.n>0){S.n--;save();if(S.n)spPlay(S.n-1)}}
 function newGame(){pick.style.display='block'}
 function startGame(set){if(confirm('Start a new '+SETS[set].name+' game with a new code?')){S={code:mk(set),n:0,round:1};pick.style.display='none';save();if(sp.pl&&sp.pl.code!==S.code)spMsg(sp.token?'Connected. Create the playlist for this game next.':'Not connected. Manual mode: play each song yourself.')}}
 function chk(){const id=+cid.value;if(!id)return;const c=cardFor(S.code,id);const w=checkRound(c,[...Array(S.n).keys()],S.round);cres.innerHTML=(w.win?`<h3>✅ BINGO! ${ROUNDS[S.round].name} (${ROUNDS[S.round].rule}) – Go Irish!</h3>`:`<h3>❌ Not yet for ${ROUNDS[S.round].name} (${ROUNDS[S.round].rule}): ${w.msg}</h3>`)+'<div class="grid" style="max-width:360px">'+c.map(i=>`<div class="tile ${i<S.n?'on':''}"><span>${SONGS[i][0]}</span></div>`).join('')+'</div>';fitTiles(cres)}
@@ -34,9 +35,12 @@ async function mkPlaylist(){if(!sp.token)return alert('Connect Spotify first.');
  await api(`/playlists/${p.id}/tracks`,{method:'POST',body:JSON.stringify({uris:uris.filter(Boolean)})});
  sp.pl={id:p.id,uri:p.uri,uris,code:S.code};localStorage.jj_pl=JSON.stringify(sp.pl);const miss=SONGS.filter((_,i)=>!uris[i]).map(s=>s[0]);
  spMsg(`Playlist created (${uris.filter(Boolean).length} tracks, in call order). Turn Shuffle OFF. Press Next to play.`+(miss.length?' Not found (play manually): '+miss.join(', '):''))}
-async function spPlay(i){if(!sp.token||sp.pl?.code!==S.code||!sp.pl?.uris[i])return;await api('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[sp.pl.uris[i]]})}).catch(()=>{})}
+// play inside the playlist so Spotify's own next/back stay in call order; pause sync briefly so the old track doesn't pull the game back
+let lastUri='',quietUntil=0;
+async function spPlay(i){if(!sp.token||sp.pl?.code!==S.code)return;const u=sp.pl.uris[i];if(!u)return spMsg(`"${SONGS[i][0]}" isn't on Spotify. Play it another way, then press Next.`);lastUri=u;quietUntil=Date.now()+6000;
+ await api('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:sp.pl.uri,offset:{uri:u}})}).catch(()=>{})}
 function spMsg(t){document.getElementById('sp').textContent=t}
-setInterval(async()=>{if(!sp.token||!sp.pl||sp.pl.code!==S.code||!auto.checked)return;const r=await api('/me/player/currently-playing').catch(()=>null);const u=r?.item?.uri;if(!u)return;
+setInterval(async()=>{if(!sp.token||!sp.pl||sp.pl.code!==S.code||!auto.checked)return;const r=await api('/me/player/currently-playing').catch(()=>null);const u=r?.item?.uri;if(!u||Date.now()<quietUntil||u===lastUri)return;lastUri=u;
  const i=sp.pl.uris.indexOf(u);if(i>=0&&i+1!==S.n){S.n=i+1;save()}},4000);
 (async()=>{await handleCode();spMsg(sp.token?(sp.pl&&sp.pl.code===S.code?'Connected. Playlist ready.':'Connected. Create the playlist next.'):'Not connected. Manual mode: play each song yourself.');render()})();
 </script></body></html>
