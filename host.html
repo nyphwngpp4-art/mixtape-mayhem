@@ -24,7 +24,7 @@ const REDIR=location.origin+location.pathname;
 const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 async function login(){if(!SPOTIFY_CLIENT_ID)return alert('Add your Client ID in config.js first.');const v=b64(crypto.getRandomValues(new Uint8Array(48)));sessionStorage.jj_v=v;
  const ch=b64(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)));
- location='https://accounts.spotify.com/authorize?'+new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,response_type:'code',redirect_uri:REDIR,code_challenge_method:'S256',code_challenge:ch,scope:'playlist-modify-private playlist-modify-public user-read-playback-state user-modify-playback-state user-read-currently-playing'})}
+ location='https://accounts.spotify.com/authorize?'+new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,response_type:'code',redirect_uri:REDIR,code_challenge_method:'S256',code_challenge:ch,scope:'playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public user-read-playback-state user-modify-playback-state user-read-currently-playing'})}
 async function handleCode(){const c=new URLSearchParams(location.search).get('code');if(!c)return;history.replaceState(0,'',REDIR);
  const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,grant_type:'authorization_code',code:c,redirect_uri:REDIR,code_verifier:sessionStorage.jj_v})}).then(r=>r.json());
  if(r.access_token){sp.token=r.access_token;sp.exp=Date.now()+r.expires_in*1000-6e4;localStorage.jj_tok=sp.token;localStorage.jj_exp=sp.exp}}
@@ -32,32 +32,30 @@ const api=(p,o={})=>fetch('https://api.spotify.com/v1'+p,{...o,headers:{Authoriz
 // Prefer the host's existing playlist named exactly "Mixtape Mayhem" / "Mixtape Mayhem Decades"; build one only if it's missing
 const norm=t=>(t||'').toLowerCase().replace(/\(.*?\)|\[.*?\]| - .*$/g,'').replace(/[^a-z0-9]/g,'');
 const same=(a,b)=>{a=norm(a);b=norm(b);return!!a&&!!b&&(a===b||a.startsWith(b)||b.startsWith(a))};
-async function linkPlaylist(){const want=SETS[setKey(S.code)].pl;let pl=null;
- for(let off=0;off<500&&!pl;off+=50){const r=await api(`/me/playlists?limit=50&offset=${off}`);if(r?.error)return spErr('Reading your playlists',r);const it=r?.items||[];pl=it.find(x=>x&&x.name===want);if(it.length<50)break}
- if(!pl)return false;spMsg(`Found "${want}". Matching songs…`);const tracks=[];
- for(let url=`/playlists/${pl.id}/items?limit=100`;url;){let r=await api(url);if(r?.error&&url.includes('/items'))r=await api(url=url.replace('/items','/tracks'));if(r?.error)return spErr('Reading the playlist',r);
+// Use the host's existing playlist ("Mixtape Mayhem" / "Mixtape Mayhem Decades"), found by name or from a pasted link
+async function findPlaylist(want,key){let saved=null;try{saved=JSON.parse(localStorage[key]||'null')}catch(e){}if(saved)return saved;
+ for(let off=0;off<500;off+=50){const r=await api(`/me/playlists?limit=50&offset=${off}`);if(r?.error)break;const it=r?.items||[],f=it.find(x=>x&&x.name===want);if(f)return{id:f.id,uri:f.uri};if(it.length<50)break}
+ const link=prompt(`Paste the link to your "${want}" playlist.\nIn Spotify: open the playlist, click ••• → Share → Copy link to playlist.`)||'';const m=link.match(/playlist[/:]([A-Za-z0-9]+)/);
+ return m?{id:m[1],uri:'spotify:playlist:'+m[1]}:null}
+async function mkPlaylist(){if(!sp.token)return alert('Connect Spotify first.');const want=SETS[setKey(S.code)].pl,key='jj_link_'+setKey(S.code);spMsg('Looking for your playlist…');
+ const pl=await findPlaylist(want,key);if(!pl)return spMsg(`No playlist linked. Press the button again and paste the link to "${want}".`);spMsg(`Reading "${want}"…`);const tracks=[];
+ for(let url=`/playlists/${pl.id}/items?limit=50`;url;){let r=await api(url);if(r?.error&&url.includes('/items'))r=await api(url=url.replace('/items','/tracks'));
+  if(r?.error){localStorage.removeItem(key);return r.error.status===401||r.error.status===403?spMsg(`Spotify won't let the game read that playlist (${r.error.message||r.error.status}). Press Connect Spotify, approve the new permissions, then press this button again.`):spErr('Reading the playlist',r)}
   (r.items||[]).forEach(x=>{const t=x.item||x.track;if(t?.uri)tracks.push(t)});url=r.next?r.next.replace('https://api.spotify.com/v1',''):''}
- if(!tracks.length)return false;
+ if(!tracks.length){localStorage.removeItem(key);return spMsg(`"${want}" looks empty. Check the link and press the button again.`)}
+ localStorage[key]=JSON.stringify(pl);
  const uris=SONGS.map(([t],i)=>(same(tracks[i]?.name,t)?tracks[i]:tracks.find(x=>same(x.name,t)))?.uri||null);
  // songs Spotify would reach in a different order than the game calls them
  let moved=0,last=-1;uris.forEach(u=>{if(!u)return;const k=tracks.findIndex(x=>x.uri===u);if(k<last)moved++;else last=k});
  sp.pl={id:pl.id,uri:pl.uri,uris,code:S.code};localStorage.jj_pl=JSON.stringify(sp.pl);const miss=SONGS.filter((_,i)=>!uris[i]).map(s=>s[0]);
- spMsg(`Using your "${want}" playlist (${uris.filter(Boolean).length} of ${SONGS.length} songs matched). Turn Shuffle OFF. Press Next to play.`+(moved?` ${moved} songs are out of order in Spotify, so let the game pick each song with Next instead of Spotify's skip button.`:'')+(miss.length?' Not in the playlist (play another way): '+miss.join(', '):''));return true}
-async function mkPlaylist(){if(!sp.token)return alert('Connect Spotify first.');spMsg('Looking for your playlist…');const got=await linkPlaylist();if(got!==false)return;spMsg('Finding songs…');const uris=[];
- for(const [t,a] of SONGS){spMsg(`Finding songs… ${uris.length+1} of ${SONGS.length}`);const r=await api('/search?type=track&limit=1&q='+encodeURIComponent(`track:${t.replace(/\(.*?\)/g,'')} artist:${a.split(/ ft\.| &/)[0]}`));if(r?.error)return spErr('Song search',r);uris.push(r?.tracks?.items?.[0]?.uri||null)}
- const p=await api('/me/playlists',{method:'POST',body:JSON.stringify({name:SETS[setKey(S.code)].pl+' '+S.code,public:false,description:'Mixtape Mayhem call order'})});
- if(!p?.id)return spErr('Creating the playlist',p);
- const body={method:'POST',body:JSON.stringify({uris:uris.filter(Boolean)})};let add=await api(`/playlists/${p.id}/items`,body);if(add?.error)add=await api(`/playlists/${p.id}/tracks`,body);
- if(add?.error)return spErr('Adding songs to the playlist',add);
- sp.pl={id:p.id,uri:p.uri,uris,code:S.code};localStorage.jj_pl=JSON.stringify(sp.pl);const miss=SONGS.filter((_,i)=>!uris[i]).map(s=>s[0]);
- spMsg(`Playlist created (${uris.filter(Boolean).length} tracks, in call order). Turn Shuffle OFF. Press Next to play.`+(miss.length?' Not found (play manually): '+miss.join(', '):''))}
+ spMsg(`Using your "${want}" playlist (${uris.filter(Boolean).length} of ${SONGS.length} songs matched). Turn Shuffle OFF. Press Next to play.`+(moved?` ${moved} songs are out of order in Spotify, so let the game pick each song with Next instead of Spotify's skip button.`:'')+(miss.length?' Not in the playlist (play another way): '+miss.join(', '):''))}
 // play inside the playlist so Spotify's own next/back stay in call order; pause sync briefly so the old track doesn't pull the game back
 let lastUri='',quietUntil=0;
 async function spPlay(i){if(!sp.token)return;if(sp.pl?.code!==S.code)return spMsg('Spotify is connected, but this game is not linked to a playlist yet. Press Use my Mixtape Mayhem playlist.');const u=sp.pl.uris[i];if(!u)return spMsg(`"${SONGS[i][0]}" isn't on Spotify. Play it another way, then press Next.`);lastUri=u;quietUntil=Date.now()+6000;
  const r=await api('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:sp.pl.uri,offset:{uri:u}})}).catch(()=>null);
  if(r?.error)return spErr('Playing the song',r);spMsg(`Playing: ${SONGS[i][0]}`)}
 // show Spotify's reason in plain words instead of failing silently
-function spErr(what,r){const e=r?.error||{},m=e.reason==='NO_ACTIVE_DEVICE'||e.status===404?'No Spotify device is active. Open Spotify on the device playing to the speaker, start any song, then press Next again.':e.reason==='PREMIUM_REQUIRED'||/premium/i.test(e.message||'')?'Spotify only lets Premium accounts be controlled. Log in with a Premium account.':e.status===401?'The Spotify login expired. Press Connect Spotify again.':e.status===403?'Spotify refused. Check that this Spotify account is listed under User Management in the Spotify developer app.':(e.message||'unknown error');spMsg(`${what} failed: ${m}`)}
+function spErr(what,r){const e=r?.error||{},m=e.reason==='NO_ACTIVE_DEVICE'||e.status===404?'No Spotify device is active. Open Spotify on the device playing to the speaker, start any song, then press Next again.':e.reason==='PREMIUM_REQUIRED'||/premium/i.test(e.message||'')?'Spotify only lets Premium accounts be controlled. Log in with a Premium account.':e.status===401?'The Spotify login expired. Press Connect Spotify again.':e.status===403?`Spotify refused (${e.message||'403'}). Press Connect Spotify and approve again.`:(e.message||'unknown error');spMsg(`${what} failed: ${m}`)}
 function spMsg(t){document.getElementById('sp').textContent=t}
 setInterval(async()=>{if(!sp.token||!sp.pl||sp.pl.code!==S.code||!auto.checked)return;const r=await api('/me/player/currently-playing').catch(()=>null);const u=r?.item?.uri;if(!u||Date.now()<quietUntil||u===lastUri)return;lastUri=u;
  const i=sp.pl.uris.indexOf(u);if(i>=0&&i+1!==S.n){S.n=i+1;save()}},4000);
