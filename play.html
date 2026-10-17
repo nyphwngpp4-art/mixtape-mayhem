@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mixtape Mayhem – Card</title><link rel="stylesheet" href="style.css"></head><body>
+<div class="top"></div><div class="wrap"><div class="meta" id="meta"></div><div class="round" id="rd"></div><div class="grid" id="g"></div>
+<div class="links"><a onclick="fb()">Have feedback?</a><a onclick="hist()">View song history</a></div>
+<button class="big" onclick="verify()">VERIFY BINGO</button></div>
+<div class="modal" id="m" onclick="if(event.target===this)this.classList.remove('show')"><div class="card" id="mc"></div></div>
+<script src="songs.js"></script><script src="logo.js"></script><script>
+const code=(new URLSearchParams(location.search).get('g')||'').toUpperCase();if(!code)location='index.html';
+const K='jj_'+code;let st=JSON.parse(localStorage[K]||'null');if(!st){st={id:1000+Math.floor(Math.random()*9000),marks:[],played:0,round:1};}if(!st.round)st.round=1;
+const showR=()=>{const R=ROUNDS[st.round];document.getElementById('rd').innerHTML=`<b>${R.name}: ${R.rule}</b> – need ${R.need}`};
+const save=()=>{localStorage[K]=JSON.stringify(st);showR()};save();
+const SONGS=songsFor(code),SET=SETS[setKey(code)];const card=cardFor(code,st.id);document.getElementById('meta').textContent=`Game ${code} · ${SET.name} · Card #${st.id}`;
+const g=document.getElementById('g');card.forEach((s,i)=>{const d=document.createElement('div');d.className='tile'+(st.marks.includes(i)?' on':'');const sp=document.createElement('span');sp.textContent=SONGS[s][0];d.appendChild(sp);d.onclick=()=>{const k=st.marks.indexOf(i);k<0?st.marks.push(i):st.marks.splice(k,1);d.classList.toggle('on');save()};g.appendChild(d)});fitTiles(g);document.fonts&&document.fonts.ready.then(()=>fitTiles(g));
+const M=h=>{document.getElementById('mc').innerHTML=h+'<p><button class="s" onclick="m.classList.remove(\'show\')">Close</button></p>';m.classList.add('show')};
+function askNum(next){M(`<h3>What round and song number is the host on?</h3><select id="r">${[1,2,3].map(i=>`<option value="${i}" ${i===st.round?'selected':''}>${ROUNDS[i].name}: ${ROUNDS[i].rule}</option>`).join('')}</select><p>Look for <b>Song #</b> on the host screen.</p><input id="n" type="number" inputmode="numeric" value="${st.played||''}"><button class="s" onclick="st.round=+r.value;st.played=Math.max(0,Math.min(${SONGS.length},+n.value||0));save();${next}()">OK</button>`)}
+function hist(){if(!st.played)return askNum('hist');M(`<h3>Songs played (${st.played})</h3><ol class="hist">${SONGS.slice(0,st.played).map(s=>`<li>${s[0]}</li>`).join('')}</ol><button class="s" onclick="askNum('hist')">Update</button>`)}
+function verify(){askNum('doVerify')}
+function doVerify(){const played=[...Array(st.played).keys()];const w=checkRound(card,played,st.round);const R=ROUNDS[st.round];const wrong=st.marks.filter(i=>card[i]>=st.played).map(i=>SONGS[card[i]][0]);
+M(w.win?`${WIN_ART}<h2>🎉 BINGO! ${R.name} – ${R.rule}!</h2><p><b>Go Irish!</b> Show the host: <b>Card #${st.id}</b></p>`:`<h2>Not yet!</h2><p>${R.name} needs ${R.need}. You have ${w.msg}. Keep listening!</p>`+(wrong.length?`<p>Not played yet: ${wrong.join(', ')}</p>`:''))}
+function fb(){M('<h3>Have feedback?</h3><p>Tell the host what song you want next time! 🎶</p>')}
+</script></body></html>

@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mixtape Mayhem – Host</title><link rel="stylesheet" href="style.css"></head><body>
+<div class="top"></div><div class="wrap" style="max-width:900px">
+<div class="card" style="text-align:center"><div>Game code: <b id="code" style="font-size:34px;letter-spacing:3px"></b> <button class="s" onclick="newGame()">New game</button><div>Song set: <b id="setn"></b></div>
+<div id="pick" style="display:none"><p><b>Pick a song set for the new game:</b></p><button class="s" onclick="startGame('hits')">Today's Hits</button><button class="s" style="background:var(--navy)" onclick="startGame('decades')">Decades ('80s–'00s)</button><button class="s" style="background:#888" onclick="pick.style.display='none'">Cancel</button></div></div>
+<div class="num" id="rnd" style="font-size:26px;color:#0C2340"></div><button class="s" onclick="nextRound()" style="background:#C99700;color:#0C2340">Next round ⏭</button><div class="num" id="num"></div><div class="now" id="now">Press Next to start!</div><div class="artist" id="art"></div><p id="play" style="font-weight:700"></p>
+<button class="big" onclick="next()">NEXT SONG ▶</button><button class="s" onclick="back()" style="background:#888">Undo</button></div>
+<div class="card"><h3>Check a card</h3><input id="cid" type="number" placeholder="Card #"><button class="s" onclick="chk()">Verify Bingo</button><div id="cres"></div></div>
+<div class="card"><h3>Spotify</h3><p id="sp"></p><button class="s" id="b1" onclick="login()">Connect Spotify</button><button class="s" id="b2" onclick="mkPlaylist()">Create Mixtape Mayhem playlist</button><label><input type="checkbox" id="auto" checked style="width:auto"> Auto-advance when Spotify track changes</label></div>
+<div class="card"><h3>Songs played</h3><ol class="hist" id="h"></ol></div></div>
+<script src="songs.js"></script><script src="config.js"></script><script src="logo.js"></script><script>
+let S=JSON.parse(localStorage.jj_host||'null')||{code:mk(),n:0,round:1};if(!S.round)S.round=1;function mk(set){return (set==='decades'?'D':'')+Array.from({length:4},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.random()*24|0]).join('')}
+let SONGS=songsFor(S.code);const save=()=>{localStorage.jj_host=JSON.stringify(S);render()};
+function render(){SONGS=songsFor(S.code);setn.textContent=SETS[setKey(S.code)].name;const R=ROUNDS[S.round];rnd.textContent=`${R.name}: ${R.rule}`+(S.round===3?' – Play like a champion!':'');code.textContent=S.code;h.innerHTML=SONGS.slice(0,S.n).map(s=>`<li>${s[0]} – <i>${s[1]}</i></li>`).join('');
+ if(S.n){const s=SONGS[S.n-1];num.textContent=`Song #${S.n} of ${SONGS.length}`;now.textContent=s[0];art.textContent=s[1];play.textContent=sp.token?'':`Play: ${s[0]} – ${s[1]} (or hum it! 10-second guess bonus)`}else{num.textContent='Song #0';now.textContent='Press Next to start!';art.textContent='';play.textContent=''}}
+function nextRound(){if(S.round<3&&confirm('Advance to '+ROUNDS[S.round+1].name+' ('+ROUNDS[S.round+1].rule+')? Songs keep counting.')){S.round++;save()}}
+function next(){if(S.n<SONGS.length){S.n++;save();spPlay(S.n-1)}}function back(){if(S.n>0){S.n--;save()}}
+function newGame(){pick.style.display='block'}
+function startGame(set){if(confirm('Start a new '+SETS[set].name+' game with a new code?')){S={code:mk(set),n:0,round:1};pick.style.display='none';save();if(sp.pl&&sp.pl.code!==S.code)spMsg(sp.token?'Connected. Create the playlist for this game next.':'Not connected. Manual mode: play each song yourself.')}}
+function chk(){const id=+cid.value;if(!id)return;const c=cardFor(S.code,id);const w=checkRound(c,[...Array(S.n).keys()],S.round);cres.innerHTML=(w.win?`<h3>✅ BINGO! ${ROUNDS[S.round].name} (${ROUNDS[S.round].rule}) – Go Irish!</h3>`:`<h3>❌ Not yet for ${ROUNDS[S.round].name} (${ROUNDS[S.round].rule}): ${w.msg}</h3>`)+'<div class="grid" style="max-width:360px">'+c.map(i=>`<div class="tile ${i<S.n?'on':''}"><span>${SONGS[i][0]}</span></div>`).join('')+'</div>';fitTiles(cres)}
+// ---- Spotify PKCE ----
+const sp={token:localStorage.jj_tok||'',exp:+localStorage.jj_exp||0,pl:JSON.parse(localStorage.jj_pl||'null')};if(Date.now()>sp.exp)sp.token='';
+const REDIR=location.origin+location.pathname;
+const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function login(){if(!SPOTIFY_CLIENT_ID)return alert('Add your Client ID in config.js first.');const v=b64(crypto.getRandomValues(new Uint8Array(48)));sessionStorage.jj_v=v;
+ const ch=b64(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v)));
+ location='https://accounts.spotify.com/authorize?'+new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,response_type:'code',redirect_uri:REDIR,code_challenge_method:'S256',code_challenge:ch,scope:'playlist-modify-private playlist-modify-public user-read-playback-state user-modify-playback-state user-read-currently-playing'})}
+async function handleCode(){const c=new URLSearchParams(location.search).get('code');if(!c)return;history.replaceState(0,'',REDIR);
+ const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,grant_type:'authorization_code',code:c,redirect_uri:REDIR,code_verifier:sessionStorage.jj_v})}).then(r=>r.json());
+ if(r.access_token){sp.token=r.access_token;sp.exp=Date.now()+r.expires_in*1000-6e4;localStorage.jj_tok=sp.token;localStorage.jj_exp=sp.exp}}
+const api=(p,o={})=>fetch('https://api.spotify.com/v1'+p,{...o,headers:{Authorization:'Bearer '+sp.token,'Content-Type':'application/json'}}).then(r=>r.status===204?null:r.json().catch(()=>null));
+async function mkPlaylist(){if(!sp.token)return alert('Connect Spotify first.');spMsg('Finding songs…');const uris=[];
+ for(const [t,a] of SONGS){const r=await api('/search?type=track&limit=1&q='+encodeURIComponent(`track:${t.replace(/\(.*?\)/g,'')} artist:${a.split(/ ft\.| &/)[0]}`));uris.push(r?.tracks?.items?.[0]?.uri||null)}
+ const p=await api('/me/playlists',{method:'POST',body:JSON.stringify({name:SETS[setKey(S.code)].pl+' '+S.code,public:false,description:'Mixtape Mayhem call order'})});
+ await api(`/playlists/${p.id}/tracks`,{method:'POST',body:JSON.stringify({uris:uris.filter(Boolean)})});
+ sp.pl={id:p.id,uri:p.uri,uris,code:S.code};localStorage.jj_pl=JSON.stringify(sp.pl);const miss=SONGS.filter((_,i)=>!uris[i]).map(s=>s[0]);
+ spMsg(`Playlist created (${uris.filter(Boolean).length} tracks, in call order). Turn Shuffle OFF. Press Next to play.`+(miss.length?' Not found (play manually): '+miss.join(', '):''))}
+async function spPlay(i){if(!sp.token||sp.pl?.code!==S.code||!sp.pl?.uris[i])return;await api('/me/player/play',{method:'PUT',body:JSON.stringify({uris:[sp.pl.uris[i]]})}).catch(()=>{})}
+function spMsg(t){document.getElementById('sp').textContent=t}
+setInterval(async()=>{if(!sp.token||!sp.pl||sp.pl.code!==S.code||!auto.checked)return;const r=await api('/me/player/currently-playing').catch(()=>null);const u=r?.item?.uri;if(!u)return;
+ const i=sp.pl.uris.indexOf(u);if(i>=0&&i+1!==S.n){S.n=i+1;save()}},4000);
+(async()=>{await handleCode();spMsg(sp.token?(sp.pl&&sp.pl.code===S.code?'Connected. Playlist ready.':'Connected. Create the playlist next.'):'Not connected. Manual mode: play each song yourself.');render()})();
+</script></body></html>
