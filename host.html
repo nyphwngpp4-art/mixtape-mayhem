@@ -28,17 +28,22 @@ async function login(){if(!SPOTIFY_CLIENT_ID)return alert('Add your Client ID in
 async function handleCode(){const c=new URLSearchParams(location.search).get('code');if(!c)return;history.replaceState(0,'',REDIR);
  const r=await fetch('https://accounts.spotify.com/api/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:SPOTIFY_CLIENT_ID,grant_type:'authorization_code',code:c,redirect_uri:REDIR,code_verifier:sessionStorage.jj_v})}).then(r=>r.json());
  if(r.access_token){sp.token=r.access_token;sp.exp=Date.now()+r.expires_in*1000-6e4;localStorage.jj_tok=sp.token;localStorage.jj_exp=sp.exp}}
-const api=(p,o={})=>fetch('https://api.spotify.com/v1'+p,{...o,headers:{Authorization:'Bearer '+sp.token,'Content-Type':'application/json'}}).then(r=>r.status===204?null:r.json().catch(()=>null));
+const api=(p,o={})=>fetch('https://api.spotify.com/v1'+p,{...o,headers:{Authorization:'Bearer '+sp.token,'Content-Type':'application/json'}}).then(r=>r.status===204||r.status===202?null:r.json().catch(()=>r.ok?null:{error:{status:r.status}}));
 async function mkPlaylist(){if(!sp.token)return alert('Connect Spotify first.');spMsg('Finding songs…');const uris=[];
- for(const [t,a] of SONGS){const r=await api('/search?type=track&limit=1&q='+encodeURIComponent(`track:${t.replace(/\(.*?\)/g,'')} artist:${a.split(/ ft\.| &/)[0]}`));uris.push(r?.tracks?.items?.[0]?.uri||null)}
+ for(const [t,a] of SONGS){spMsg(`Finding songs… ${uris.length+1} of ${SONGS.length}`);const r=await api('/search?type=track&limit=1&q='+encodeURIComponent(`track:${t.replace(/\(.*?\)/g,'')} artist:${a.split(/ ft\.| &/)[0]}`));if(r?.error)return spErr('Song search',r);uris.push(r?.tracks?.items?.[0]?.uri||null)}
  const p=await api('/me/playlists',{method:'POST',body:JSON.stringify({name:SETS[setKey(S.code)].pl+' '+S.code,public:false,description:'Mixtape Mayhem call order'})});
- await api(`/playlists/${p.id}/tracks`,{method:'POST',body:JSON.stringify({uris:uris.filter(Boolean)})});
+ if(!p?.id)return spErr('Creating the playlist',p);
+ const body={method:'POST',body:JSON.stringify({uris:uris.filter(Boolean)})};let add=await api(`/playlists/${p.id}/items`,body);if(add?.error)add=await api(`/playlists/${p.id}/tracks`,body);
+ if(add?.error)return spErr('Adding songs to the playlist',add);
  sp.pl={id:p.id,uri:p.uri,uris,code:S.code};localStorage.jj_pl=JSON.stringify(sp.pl);const miss=SONGS.filter((_,i)=>!uris[i]).map(s=>s[0]);
  spMsg(`Playlist created (${uris.filter(Boolean).length} tracks, in call order). Turn Shuffle OFF. Press Next to play.`+(miss.length?' Not found (play manually): '+miss.join(', '):''))}
 // play inside the playlist so Spotify's own next/back stay in call order; pause sync briefly so the old track doesn't pull the game back
 let lastUri='',quietUntil=0;
-async function spPlay(i){if(!sp.token||sp.pl?.code!==S.code)return;const u=sp.pl.uris[i];if(!u)return spMsg(`"${SONGS[i][0]}" isn't on Spotify. Play it another way, then press Next.`);lastUri=u;quietUntil=Date.now()+6000;
- await api('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:sp.pl.uri,offset:{uri:u}})}).catch(()=>{})}
+async function spPlay(i){if(!sp.token)return;if(sp.pl?.code!==S.code)return spMsg('Spotify is connected, but this game has no playlist yet. Press Create Mixtape Mayhem playlist.');const u=sp.pl.uris[i];if(!u)return spMsg(`"${SONGS[i][0]}" isn't on Spotify. Play it another way, then press Next.`);lastUri=u;quietUntil=Date.now()+6000;
+ const r=await api('/me/player/play',{method:'PUT',body:JSON.stringify({context_uri:sp.pl.uri,offset:{uri:u}})}).catch(()=>null);
+ if(r?.error)return spErr('Playing the song',r);spMsg(`Playing: ${SONGS[i][0]}`)}
+// show Spotify's reason in plain words instead of failing silently
+function spErr(what,r){const e=r?.error||{},m=e.reason==='NO_ACTIVE_DEVICE'||e.status===404?'No Spotify device is active. Open Spotify on the device playing to the speaker, start any song, then press Next again.':e.reason==='PREMIUM_REQUIRED'||/premium/i.test(e.message||'')?'Spotify only lets Premium accounts be controlled. Log in with a Premium account.':e.status===401?'The Spotify login expired. Press Connect Spotify again.':e.status===403?'Spotify refused. Check that this Spotify account is listed under User Management in the Spotify developer app.':(e.message||'unknown error');spMsg(`${what} failed: ${m}`)}
 function spMsg(t){document.getElementById('sp').textContent=t}
 setInterval(async()=>{if(!sp.token||!sp.pl||sp.pl.code!==S.code||!auto.checked)return;const r=await api('/me/player/currently-playing').catch(()=>null);const u=r?.item?.uri;if(!u||Date.now()<quietUntil||u===lastUri)return;lastUri=u;
  const i=sp.pl.uris.indexOf(u);if(i>=0&&i+1!==S.n){S.n=i+1;save()}},4000);
