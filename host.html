@@ -1,14 +1,14 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mixtape Mayhem – Host</title><link rel="stylesheet" href="style.css"></head><body>
 <div class="top"></div><div class="wrap" style="max-width:900px">
 <div class="card" style="text-align:center"><div>Game code: <b id="code" style="font-size:34px;letter-spacing:3px"></b> <button class="s" onclick="newGame()">New game</button><div>Song set: <b id="setn"></b></div>
-<div id="pick" style="display:none"><p><b>Pick a song set for the new game:</b></p><button class="s" onclick="startGame('hits')">Today's Hits</button><button class="s" style="background:var(--navy)" onclick="startGame('decades')">Decades ('80s–'00s)</button><button class="s" style="background:#888" onclick="pick.style.display='none'">Cancel</button></div></div>
+<div id="pick" style="display:none"><p><b>Pick a song set for the new game:</b></p><button class="s" onclick="startGame('hits')">Today's Hits</button><button class="s" style="background:var(--navy)" onclick="startGame('decades')">Decades ('80s–'00s)</button><button class="s" style="background:#C99700;color:#0C2340" onclick="startGame('tailgate')">Tailgate</button><button class="s" style="background:#888" onclick="pick.style.display='none'">Cancel</button></div></div>
 <div class="num" id="rnd" style="font-size:26px;color:#0C2340"></div><button class="s" onclick="nextRound()" style="background:#C99700;color:#0C2340">Next round ⏭</button><div class="num" id="num"></div><div class="now" id="now">Press Next to start!</div><div class="artist" id="art"></div><p id="play" style="font-weight:700"></p>
 <button class="big" onclick="next()">NEXT SONG ▶</button><button class="s" onclick="back()" style="background:#888">Undo</button></div>
 <div class="card"><h3>Check a card</h3><input id="cid" type="number" placeholder="Card #"><button class="s" onclick="chk()">Verify Bingo</button><div id="cres"></div></div>
 <div class="card"><h3>Spotify</h3><p id="sp"></p><button class="s" id="b1" onclick="login()">Connect Spotify</button><button class="s" id="b2" onclick="mkPlaylist()">Use my Mixtape Mayhem playlist</button><label><input type="checkbox" id="auto" checked style="width:auto"> Auto-advance when Spotify track changes</label></div>
 <div class="card"><h3>Songs played</h3><ol class="hist" id="h"></ol></div></div>
 <script src="songs.js"></script><script src="config.js"></script><script src="logo.js"></script><script>
-let S=JSON.parse(localStorage.jj_host||'null')||{code:mk(),n:0,round:1};if(!S.round)S.round=1;function mk(set){return (set==='decades'?'D':'')+Array.from({length:4},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.random()*24|0]).join('')}
+let S=JSON.parse(localStorage.jj_host||'null')||{code:mk(),n:0,round:1};if(!S.round)S.round=1;function mk(set){return ({decades:'D',tailgate:'T'}[set]||'')+Array.from({length:4},()=>"ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.random()*24|0]).join('')}
 localStorage.jj_host=JSON.stringify(S); // keep the code across reloads and the Spotify login round-trip
 let SONGS=songsFor(S.code);const save=()=>{localStorage.jj_host=JSON.stringify(S);render()};
 function render(){SONGS=songsFor(S.code);setn.textContent=SETS[setKey(S.code)].name;const R=ROUNDS[S.round];rnd.textContent=`${R.name}: ${R.rule}`+(S.round===3?' – Play like a champion!':'');code.textContent=S.code;h.innerHTML=SONGS.slice(0,S.n).map(s=>`<li>${s[0]} – <i>${s[1]}</i></li>`).join('');
@@ -33,7 +33,7 @@ const api=(p,o={})=>fetch('https://api.spotify.com/v1'+p,{...o,headers:{Authoriz
 const norm=t=>(t||'').toLowerCase().replace(/\(.*?\)|\[.*?\]| - .*$/g,'').replace(/[^a-z0-9]/g,'');
 const same=(a,b)=>{a=norm(a);b=norm(b);return!!a&&!!b&&(a===b||a.startsWith(b)||b.startsWith(a))};
 // Use the host's existing playlist ("Mixtape Mayhem" / "Mixtape Mayhem Decades"), found by name or from a pasted link
-async function findPlaylist(want,key){let saved=null;try{saved=JSON.parse(localStorage[key]||'null')}catch(e){}if(saved)return saved;
+async function findPlaylist(want,key){let saved=null;try{saved=JSON.parse(localStorage[key]||'null')}catch(e){}if(saved)return saved;const known=SETS[setKey(S.code)].id;if(known)return{id:known,uri:'spotify:playlist:'+known};
  for(let off=0;off<500;off+=50){const r=await api(`/me/playlists?limit=50&offset=${off}`);if(r?.error)break;const it=r?.items||[],f=it.find(x=>x&&x.name===want);if(f)return{id:f.id,uri:f.uri};if(it.length<50)break}
  const link=prompt(`Paste the link to your "${want}" playlist.\nIn Spotify: open the playlist, click ••• → Share → Copy link to playlist.`)||'';const m=link.match(/playlist[/:]([A-Za-z0-9]+)/);
  return m?{id:m[1],uri:'spotify:playlist:'+m[1]}:null}

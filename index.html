@@ -3,5 +3,5 @@
 <button class="s" onclick="go()">Get my card</button></div>
 <div class="card"><h3>Hosting?</h3><button class="s" style="background:var(--navy)" onclick="location='host.html'">Open host screen</button></div></div>
 <script src="logo.js"></script><script>function go(){const c=document.getElementById('c').value.replace(/\s/g,'').toUpperCase();if(!c)return;
-// host codes are 4 letters (Today's Hits) or D + 4 letters (Decades), never I or O
-if(!/^D?[A-HJ-NP-Z]{4}$/.test(c))return err.textContent='Check the code on the host screen: 4 letters, or D + 4 letters for Decades.';location='play.html?g='+encodeURIComponent(c)}</script></body></html>
+// host codes are 4 letters (Today's Hits), D + 4 (Decades) or T + 4 (Tailgate), never I or O
+if(!/^[DT]?[A-HJ-NP-Z]{4}$/.test(c))return err.textContent='Check the code from the host: 4 letters, or 5 letters starting with D or T.';location='play.html?g='+encodeURIComponent(c)}</script></body></html>
